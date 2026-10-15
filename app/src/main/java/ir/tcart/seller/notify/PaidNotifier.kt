@@ -13,8 +13,8 @@ import ir.tcart.seller.R
 import ir.tcart.seller.sms.SmsText
 
 object PaidNotifier {
-    const val CHANNEL_PAID = "tcart_paid_v4"
-    const val CHANNEL_WAIT = "tcart_wait_v2"
+    const val CHANNEL_PAID = "tcart_paid_v5"
+    const val CHANNEL_WAIT = "tcart_wait_v3"
     const val CHANNEL_PRESENCE = "tcart_presence"
     const val CHANNEL_ALERT = "tcart_alert"
     private const val PRESENCE_ID = 41
@@ -29,7 +29,7 @@ object PaidNotifier {
         ).apply {
             description = context.getString(R.string.channel_paid_desc)
             enableVibration(true)
-            vibrationPattern = longArrayOf(0, 26, 36, 26, 48, 86, 34, 150)
+            vibrationPattern = longArrayOf(0, 30, 40, 30, 50, 90, 35, 160)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         val wait = NotificationChannel(
@@ -39,7 +39,7 @@ object PaidNotifier {
         ).apply {
             description = "واریز یا سفارشی که هنوز تأیید نشده"
             enableVibration(true)
-            vibrationPattern = longArrayOf(0, 22, 42, 22)
+            vibrationPattern = longArrayOf(0, 25, 45, 25)
         }
         val presence = NotificationChannel(
             CHANNEL_PRESENCE,
@@ -62,17 +62,18 @@ object PaidNotifier {
     }
 
     fun showPaid(context: Context, amount: Long?, status: String, detail: String) {
-        val money = if (amount != null && amount > 0) "${SmsText.faAmount(amount)} تومان" else ""
-        val title = if (money.isNotBlank()) "مبلغ $money تأیید شد" else status.ifBlank { "پرداخت تأیید شد" }
-        val line = if (detail.isBlank() || detail == "نمونه") "پرداخت تأیید شد" else "پرداخت تأیید شد · $detail"
+        val money = if (amount != null && amount > 0) "+${SmsText.faAmount(amount)} تومان" else ""
+        val title = if (money.isNotBlank()) "💰 $money به حسابت نشست!" else "💰 ${status.ifBlank { "پرداخت تأیید شد" }}"
+        val cleanDetail = if (detail.isBlank() || detail == "نمونه") "تأیید خودکار پیامک بانک" else detail
+        val line = "پرداخت با موفقیت تأیید شد · $cleanDetail"
         send(context, CHANNEL_PAID, title, line, 0xFF10B981.toInt())
     }
 
     fun showPending(context: Context, amount: Long?, detail: String) {
         val money = if (amount != null && amount > 0) "${SmsText.faAmount(amount)} تومان" else ""
-        val title = if (money.isNotBlank()) "مبلغ $money در انتظار تأیید" else "سفارش در انتظار تأیید"
-        val line = detail.ifBlank { "منتظر پیامک واریز" }
-        send(context, CHANNEL_WAIT, title, line, 0xFF3B82F6.toInt())
+        val title = if (money.isNotBlank()) "⏳ سفارش $money در انتظار تأیید" else "⏳ سفارش جدید در انتظار تأیید"
+        val line = detail.ifBlank { "منتظر دریافت پیامک واریز بانک" }
+        send(context, CHANNEL_WAIT, title, line, 0xFF0EA5E9.toInt())
     }
 
     private fun send(context: Context, channel: String, title: String, text: String, color: Int) {
@@ -88,7 +89,7 @@ object PaidNotifier {
             .setStyle(NotificationCompat.BigTextStyle().setBigContentTitle(title).bigText(text))
             .setContentIntent(openApp(context))
             .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
@@ -113,8 +114,8 @@ object PaidNotifier {
     fun presenceNotification(context: Context, line: String) =
         NotificationCompat.Builder(context, CHANNEL_PRESENCE)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("تیکارت وصل است")
-            .setContentText(if (line.isBlank()) "منتظر پیامک واریز" else line)
+            .setContentTitle("موتور پیامک تیکارت فعال است")
+            .setContentText(if (line.isBlank()) "آمادهٔ دریافت پیامک واریز بانک" else line)
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)

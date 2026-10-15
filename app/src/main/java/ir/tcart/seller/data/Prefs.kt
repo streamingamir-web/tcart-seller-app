@@ -89,7 +89,7 @@ class Prefs(context: Context) {
         set(value) = p.edit().putBoolean(KEY_INTRO, value).apply()
 
     var lightTheme: Boolean
-        get() = p.getBoolean(KEY_LIGHT, true)
+        get() = p.getBoolean(KEY_LIGHT, false)
         set(value) = p.edit().putBoolean(KEY_LIGHT, value).apply()
 
     fun bankSenders(): Set<String> = p.getStringSet(KEY_BANKS, emptySet())?.toSet().orEmpty()
