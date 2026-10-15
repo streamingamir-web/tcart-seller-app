@@ -25,6 +25,7 @@ import ir.tcart.seller.data.OrderStats
 import ir.tcart.seller.data.PlanOffer
 import ir.tcart.seller.data.Prefs
 import ir.tcart.seller.data.ProductRow
+import org.json.JSONObject
 import ir.tcart.seller.data.TcartApi
 import ir.tcart.seller.notify.PaidNotifier
 import ir.tcart.seller.sms.BankSender
@@ -73,6 +74,13 @@ class SellerViewModel(app: Application) : AndroidViewModel(app) {
     var offers by mutableStateOf<List<PlanOffer>>(emptyList())
     var invoice by mutableStateOf<Invoice?>(null)
     var manualSender by mutableStateOf("")
+    var screen by mutableStateOf("main")
+    var cardsList by mutableStateOf<List<ir.tcart.seller.data.CardRow>>(emptyList())
+    var rotateOn by mutableStateOf(false)
+    var payShowSheba by mutableStateOf(false)
+    var payMinutes by mutableStateOf(30)
+    var walletTx by mutableStateOf<List<ir.tcart.seller.data.WalletTx>>(emptyList())
+    var search by mutableStateOf("")
 
     init {
         viewModelScope.launch {
@@ -227,6 +235,128 @@ class SellerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun openScreen(name: String) {
+        screen = name
+        error = null
+        when (name) {
+            "cards" -> loadCards()
+            "wallet" -> loadWallet()
+        }
+    }
+
+    fun loadCards() = work {
+        val pack = TcartApi.cards(prefs.token)
+        withMain {
+            cardsList = pack.first
+            rotateOn = pack.second
+            payShowSheba = pack.third.showSheba
+            payMinutes = pack.third.expiryMinutes
+        }
+    }
+
+    fun addCard(number: String, holder: String, bank: String, sheba: String, nickname: String) = work {
+        TcartApi.addCard(prefs.token, number, holder, bank, sheba, nickname)
+        reloadAfterWrite()
+    }
+
+    fun togglePause(id: Long, paused: Boolean) = work {
+        TcartApi.patchCard(prefs.token, id, JSONObject().put("paused", paused))
+        reloadAfterWrite()
+    }
+
+    fun removeCard(id: Long) = work {
+        TcartApi.deleteCard(prefs.token, id)
+        reloadAfterWrite()
+    }
+
+    fun makePrimary(id: Long) = work {
+        TcartApi.primaryCard(prefs.token, id)
+        reloadAfterWrite()
+    }
+
+    fun setRotate(enabled: Boolean) = work {
+        TcartApi.rotateCards(prefs.token, enabled)
+        reloadAfterWrite()
+    }
+
+    fun savePay(showSheba: Boolean, minutes: Int) = work {
+        TcartApi.savePaySettings(prefs.token, showSheba, minutes)
+        reloadAfterWrite()
+    }
+
+    fun saveProduct(id: Long?, name: String, price: Long, description: String, delivery: String, content: String, enabled: Boolean) = work {
+        TcartApi.saveProduct(prefs.token, id, name, price, description, delivery, content, enabled)
+        reloadAfterWrite()
+    }
+
+    fun removeProduct(id: Long) = work {
+        TcartApi.deleteProduct(prefs.token, id)
+        reloadAfterWrite()
+    }
+
+    fun confirm(id: Long) = work {
+        TcartApi.confirmOrder(prefs.token, id)
+        reloadAfterWrite()
+    }
+
+    fun reject(id: Long) = work {
+        TcartApi.rejectOrder(prefs.token, id)
+        reloadAfterWrite()
+    }
+
+    fun findOrder() = work {
+        val row = TcartApi.lookupOrder(prefs.token, search.trim())
+        withMain {
+            orders = listOf(row) + orders.filter { it.id != row.id }
+        }
+    }
+
+    fun loadWallet() = work {
+        val rows = TcartApi.walletActivity(prefs.token)
+        withMain { walletTx = rows }
+    }
+
+    fun regenKey() = work {
+        TcartApi.regenerateKey(prefs.token)
+        val acc = TcartApi.account(prefs.token)
+        withMain { store(acc) }
+    }
+
+    private fun reloadAfterWrite() {
+        val dash = TcartApi.dashboard(prefs.token)
+        val pack = runCatching { TcartApi.cards(prefs.token) }.getOrNull()
+        val walletRows = runCatching { TcartApi.walletActivity(prefs.token) }.getOrDefault(emptyList())
+        kotlinx.coroutines.runBlocking(Dispatchers.Main) {
+            applyDash(dash)
+            walletTx = walletRows
+            if (pack != null) {
+                cardsList = pack.first
+                rotateOn = pack.second
+                payShowSheba = pack.third.showSheba
+                payMinutes = pack.third.expiryMinutes
+            }
+        }
+    }
+
+    private fun work(block: suspend () -> Unit) {
+        if (prefs.token.isBlank()) return
+        viewModelScope.launch {
+            busy = true
+            error = null
+            try {
+                withContext(Dispatchers.IO) { block() }
+            } catch (e: Exception) {
+                error = e.message ?: "خطا"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    private suspend fun withMain(block: () -> Unit) {
+        withContext(Dispatchers.Main) { block() }
+    }
+
     fun startListening() {
         if (prefs.bankSenders().isEmpty()) {
             error = "اول سرشمارهٔ بانک را انتخاب کن"
@@ -377,6 +507,8 @@ class SellerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun fallbackSim() = listOf(SimLine(Prefs.UNSET, "همین گوشی", "پیامک واریز این گوشی"))
+
+    fun getSavedToken(): String = prefs.token
 
     private fun granted(ctx: Context, permission: String) =
         ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED

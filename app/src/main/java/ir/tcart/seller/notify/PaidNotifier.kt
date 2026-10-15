@@ -5,19 +5,16 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.graphics.BitmapFactory
 import android.os.Build
-import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import ir.tcart.seller.MainActivity
 import ir.tcart.seller.R
 import ir.tcart.seller.sms.SmsText
 
 object PaidNotifier {
-    const val CHANNEL_PAID = "tcart_paid_v3"
-    const val CHANNEL_WAIT = "tcart_wait_v1"
+    const val CHANNEL_PAID = "tcart_paid_v4"
+    const val CHANNEL_WAIT = "tcart_wait_v2"
     const val CHANNEL_PRESENCE = "tcart_presence"
     const val CHANNEL_ALERT = "tcart_alert"
     private const val PRESENCE_ID = 41
@@ -32,7 +29,7 @@ object PaidNotifier {
         ).apply {
             description = context.getString(R.string.channel_paid_desc)
             enableVibration(true)
-            vibrationPattern = longArrayOf(0, 30, 40, 30, 50, 90, 40, 160)
+            vibrationPattern = longArrayOf(0, 26, 36, 26, 48, 86, 34, 150)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         val wait = NotificationChannel(
@@ -42,7 +39,7 @@ object PaidNotifier {
         ).apply {
             description = "واریز یا سفارشی که هنوز تأیید نشده"
             enableVibration(true)
-            vibrationPattern = longArrayOf(0, 20, 40, 20)
+            vibrationPattern = longArrayOf(0, 22, 42, 22)
         }
         val presence = NotificationChannel(
             CHANNEL_PRESENCE,
@@ -65,66 +62,39 @@ object PaidNotifier {
     }
 
     fun showPaid(context: Context, amount: Long?, status: String, detail: String) {
-        val amountLine = if (amount != null && amount > 0) "${SmsText.faAmount(amount)} تومان" else "پرداخت جدید"
-        pop(
-            context,
-            CHANNEL_PAID,
-            amountLine,
-            "پرداخت تأیید شد",
-            if (detail.isBlank()) "تیکارت" else detail,
-            0xFF059669.toInt(),
-        )
+        val money = if (amount != null && amount > 0) "${SmsText.faAmount(amount)} تومان" else ""
+        val title = if (money.isNotBlank()) "مبلغ $money تأیید شد" else status.ifBlank { "پرداخت تأیید شد" }
+        val line = if (detail.isBlank() || detail == "نمونه") "پرداخت تأیید شد" else "پرداخت تأیید شد · $detail"
+        send(context, CHANNEL_PAID, title, line, 0xFF10B981.toInt())
     }
 
     fun showPending(context: Context, amount: Long?, detail: String) {
-        val amountLine = if (amount != null && amount > 0) "${SmsText.faAmount(amount)} تومان" else "سفارش جدید"
-        pop(
-            context,
-            CHANNEL_WAIT,
-            amountLine,
-            "در انتظار تأیید",
-            detail.ifBlank { "هنوز تأیید نشده" },
-            0xFFD97706.toInt(),
-        )
+        val money = if (amount != null && amount > 0) "${SmsText.faAmount(amount)} تومان" else ""
+        val title = if (money.isNotBlank()) "مبلغ $money در انتظار تأیید" else "سفارش در انتظار تأیید"
+        val line = detail.ifBlank { "منتظر پیامک واریز" }
+        send(context, CHANNEL_WAIT, title, line, 0xFF3B82F6.toInt())
     }
 
-    private fun pop(context: Context, channel: String, amount: String, status: String, detail: String, statusColor: Int) {
+    private fun send(context: Context, channel: String, title: String, text: String, color: Int) {
         ensureChannels(context)
-        val view = RemoteViews(context.packageName, R.layout.notification_paid).apply {
-            setTextViewText(R.id.amount, amount)
-            setTextViewText(R.id.status, status)
-            setTextViewText(R.id.detail, detail)
-            setTextColor(R.id.status, statusColor)
-        }
+        val logo = BitmapFactory.decodeResource(context.resources, R.drawable.tcart_logo)
         val id = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_stat)
-            .setLargeIcon(logo(context))
-            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
-            .setCustomContentView(view)
-            .setCustomHeadsUpContentView(view)
-            .setCustomBigContentView(view)
-            .setContentTitle(status)
-            .setContentText(amount)
+            .setLargeIcon(logo)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setSubText("تیکارت")
+            .setStyle(NotificationCompat.BigTextStyle().setBigContentTitle(title).bigText(text))
             .setContentIntent(openApp(context))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setOnlyAlertOnce(false)
-            .setColor(0xFF2563EB.toInt())
+            .setColor(color)
             .build()
         manager(context).notify(id, notification)
-    }
-
-    private fun logo(context: Context): Bitmap {
-        val drawable = ContextCompat.getDrawable(context, R.drawable.ic_mark)!!
-        val size = 192
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(canvas)
-        return bitmap
     }
 
     fun showQuietProblem(context: Context, title: String, text: String) {

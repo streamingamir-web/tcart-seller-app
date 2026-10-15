@@ -1,11 +1,19 @@
 package ir.tcart.seller.ui
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
+import android.annotation.SuppressLint
+import android.graphics.Color as AndroidColor
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,18 +28,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Home
-import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Notifications
-import androidx.compose.material.icons.rounded.Person
-import androidx.compose.material.icons.rounded.ReceiptLong
+import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Sms
+import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,22 +51,23 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -68,14 +78,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.Image
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import ir.tcart.seller.R
-import ir.tcart.seller.data.OrderRow
-import ir.tcart.seller.data.ProductRow
 import ir.tcart.seller.sms.SmsText
-
-import androidx.compose.runtime.staticCompositionLocalOf
 
 private class Palette(
     val ink: Color,
@@ -91,22 +97,22 @@ private class Palette(
 private val DarkPalette = Palette(
     ink = Color(0xFFF8FAFC),
     muted = Color(0xFF94A3B8),
-    blue = Color(0xFF60A5FA),
+    blue = Color(0xFF38BDF8),
     blueDeep = Color(0xFF2563EB),
-    page = Color(0xFF070B14),
-    card = Color(0xFF111827),
+    page = Color(0xFF06080F),
+    card = Color(0xFF0F172A),
     line = Color(0xFF1E293B),
     mint = Color(0xFF34D399),
 )
 
 private val LightPalette = Palette(
     ink = Color(0xFF0F172A),
-    muted = Color(0xFF64748B),
+    muted = Color(0xFF475569),
     blue = Color(0xFF2563EB),
     blueDeep = Color(0xFF1D4ED8),
-    page = Color(0xFFF4F7FB),
-    card = Color.White,
-    line = Color(0xFFE2E8F0),
+    page = Color(0xFFF6F9FF),
+    card = Color(0xFFFFFFFF),
+    line = Color(0xFFDBEAFE),
     mint = Color(0xFF059669),
 )
 
@@ -123,64 +129,73 @@ private val Mint: Color @Composable get() = LocalPalette.current.mint
 
 @Composable
 fun SellerApp(vm: SellerViewModel = viewModel()) {
-    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-        val pal = if (vm.light) LightPalette else DarkPalette
-        MaterialTheme(
-            colorScheme = if (vm.light) {
-                androidx.compose.material3.lightColorScheme(primary = pal.blue, background = pal.page, surface = pal.card)
-            } else {
-                darkColorScheme(primary = pal.blue, background = pal.page, surface = pal.card)
-            },
-        ) {
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalPalette provides pal) {
-                Box(Modifier.fillMaxSize().background(Page)) {
-                    when (vm.stage) {
-                        Stage.Splash -> Splash()
-                        Stage.Welcome -> Welcome(vm)
-                        Stage.Permissions -> Permissions(vm)
-                        Stage.Login -> LoginScreen(vm)
-                        Stage.Panel -> Panel(vm)
-                    }
-                    vm.celebrate?.let { PayPop(it.amount) { vm.celebrate = null } }
+    val pal = if (vm.light) LightPalette else DarkPalette
+    MaterialTheme(
+        colorScheme = if (vm.light) {
+            lightColorScheme(primary = pal.blue, background = pal.page, surface = pal.card)
+        } else {
+            darkColorScheme(primary = pal.blue, background = pal.page, surface = pal.card)
+        },
+    ) {
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl, LocalPalette provides pal) {
+            Box(Modifier.fillMaxSize().background(Page)) {
+                when (vm.stage) {
+                    Stage.Splash -> Splash()
+                    Stage.Welcome -> Welcome(vm)
+                    Stage.Permissions -> Permissions(vm)
+                    Stage.Login -> LoginScreen(vm)
+                    Stage.Panel -> Panel(vm)
                 }
+                vm.celebrate?.let { PayPop(it.amount, it.status, it.detail) { vm.celebrate = null } }
             }
         }
     }
 }
 
 @Composable
-private fun Splash() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun BrandLogo(size: Int = 88) {
+    Box(contentAlignment = Alignment.Center) {
         Box(
             Modifier
-                .size(180.dp)
-                .background(Brush.radialGradient(listOf(Blue.copy(alpha = 0.35f), Color.Transparent))),
+                .size((size + 44).dp)
+                .background(Brush.radialGradient(listOf(Blue.copy(alpha = 0.28f), Mint.copy(alpha = 0.14f), Color.Transparent))),
         )
-        Image(painterResource(R.drawable.ic_mark), null, Modifier.size(96.dp).clip(RoundedCornerShape(24.dp)))
+        Image(
+            painter = painterResource(R.drawable.tcart_logo),
+            contentDescription = "تیکارت",
+            modifier = Modifier
+                .size(size.dp)
+                .shadow(16.dp, RoundedCornerShape((size / 4).dp))
+                .clip(RoundedCornerShape((size / 4).dp)),
+        )
     }
+}
+
+@Composable
+private fun Splash() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { BrandLogo(96) }
 }
 
 @Composable
 private fun Welcome(vm: SellerViewModel) {
     Column(
-        Modifier.fillMaxSize().padding(28.dp),
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         Spacer(Modifier.weight(1f))
-        Image(painterResource(R.drawable.ic_mark), null, Modifier.size(108.dp).clip(RoundedCornerShape(28.dp)))
-        Spacer(Modifier.height(28.dp))
-        Text("به تیکارت خوش آمدید", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        BrandLogo(104)
+        Spacer(Modifier.height(24.dp))
+        Text("به تیکارت خوش آمدید", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(10.dp))
         Text(
-            "پنل فروشنده، روی گوشی. درآمد، سفارش و تأیید پیامک بانک.",
+            "پنل کامل فروشنده، دقیقاً با ظاهر سایت + اتصال خودکار پیامک بانک روی همین گوشی.",
             color = Muted,
             fontSize = 15.sp,
             textAlign = TextAlign.Center,
-            lineHeight = 24.sp,
+            lineHeight = 25.sp,
         )
         Spacer(Modifier.weight(1f))
-        Pill("شروع") { vm.startIntro() }
+        PrimaryPill("شروع") { vm.startIntro() }
     }
 }
 
@@ -192,38 +207,44 @@ private fun Permissions(vm: SellerViewModel) {
         vm.nextPerm()
     }
     val pages = listOf(
-        PermPage("اعلان‌ها", "وقتی واریز تأیید شود، مبلغ را همان لحظه می‌بینی.", Icons.Rounded.Notifications),
-        PermPage("دریافت پیامک", "پیامک بانک همین گوشی به تیکارت می‌رود تا سفارش خودکار تأیید شود.", Icons.Rounded.Sms),
-        PermPage("اجرا بعد از روشن شدن", "در تنظیمات برنامه، اجرای خودکار را روشن کن تا بعد از ری‌استارت قطع نشود.", Icons.Rounded.Home),
-        PermPage("اجرا در پشت صحنه", "اجازه بده گوشی تیکارت را در پس‌زمینه نبندد.", Icons.Rounded.Person),
+        PermPage("اعلان‌های واریز", "وقتی پول به کارتت بنشیند، نوتیفیکیشن فوری با مبلغ تأییدشده می‌آید.", Icons.Rounded.Notifications),
+        PermPage("دریافت پیامک بانک", "پیامک سرشماره‌های بانکی که انتخاب می‌کنی خودکار برای تیکارت ارسال می‌شود.", Icons.Rounded.Sms),
+        PermPage("اجرا بعد از روشن شدن", "در تنظیمات برنامه، اجرای خودکار را روشن کن تا همیشه آماده بماند.", Icons.Rounded.Vibration),
+        PermPage("فعال ماندن در پس‌زمینه", "اجازه بده گوشی تیکارت را در پس‌زمینه نبندد.", Icons.Rounded.PowerSettingsNew),
     )
     val page = pages[vm.permStep.coerceIn(0, 3)]
-    Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Spacer(Modifier.height(28.dp))
+    Column(
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             repeat(4) { i ->
                 Box(
                     Modifier
                         .height(6.dp)
-                        .width(if (i == vm.permStep) 22.dp else 8.dp)
+                        .width(if (i == vm.permStep) 26.dp else 8.dp)
                         .clip(CircleShape)
-                        .background(if (i <= vm.permStep) Blue else Line),
+                        .background(if (i <= vm.permStep) BlueDeep else Line),
                 )
             }
         }
         Spacer(Modifier.weight(1f))
         Box(
-            Modifier.size(120.dp).clip(CircleShape).background(Blue.copy(alpha = 0.12f)),
+            Modifier
+                .size(116.dp)
+                .clip(RoundedCornerShape(32.dp))
+                .background(Brush.linearGradient(listOf(BlueDeep.copy(alpha = 0.16f), Mint.copy(alpha = 0.12f))))
+                .border(1.dp, Blue.copy(alpha = 0.28f), RoundedCornerShape(32.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(page.icon, null, tint = Blue, modifier = Modifier.size(48.dp))
+            Icon(page.icon, null, tint = BlueDeep, modifier = Modifier.size(46.dp))
         }
-        Spacer(Modifier.height(22.dp))
-        Text(page.title, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(24.dp))
+        Text(page.title, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
         Spacer(Modifier.height(10.dp))
-        Text(page.body, color = Muted, fontSize = 15.sp, textAlign = TextAlign.Center, lineHeight = 24.sp)
+        Text(page.body, color = Muted, fontSize = 15.sp, textAlign = TextAlign.Center, lineHeight = 25.sp)
         Spacer(Modifier.weight(1f))
-        Pill("دادن مجوز") {
+        PrimaryPill("دادن مجوز") {
             when (vm.permStep) {
                 0 -> if (vm.notifGranted()) vm.nextPerm() else launcher.launch(vm.permissions())
                 1 -> if (vm.smsGranted()) vm.nextPerm() else launcher.launch(vm.permissions())
@@ -237,7 +258,7 @@ private fun Permissions(vm: SellerViewModel) {
                 }
             }
         }
-        TextButton(onClick = { vm.nextPerm() }) { Text("بعداً", color = Muted) }
+        TextButton(onClick = { vm.nextPerm() }) { Text("رد شدن", color = Muted) }
     }
 }
 
@@ -250,290 +271,359 @@ private fun LoginScreen(vm: SellerViewModel) {
     val field = OutlinedTextFieldDefaults.colors(
         focusedTextColor = Ink,
         unfocusedTextColor = Ink,
-        focusedBorderColor = Blue,
+        focusedBorderColor = BlueDeep,
         unfocusedBorderColor = Line,
-        focusedLabelColor = Blue,
+        focusedLabelColor = BlueDeep,
         unfocusedLabelColor = Muted,
-        cursorColor = Blue,
+        cursorColor = BlueDeep,
+        focusedContainerColor = Card,
+        unfocusedContainerColor = Card,
     )
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+        Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(48.dp))
-        Image(painterResource(R.drawable.ic_mark), null, Modifier.size(84.dp).clip(RoundedCornerShape(22.dp)))
-        Spacer(Modifier.height(16.dp))
-        Text("ورود به تیکارت", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text("همان حساب پنل سایت", color = Muted, fontSize = 14.sp)
         Spacer(Modifier.height(28.dp))
-        OutlinedTextField(phone, { phone = it }, Modifier.fillMaxWidth(), label = { Text("شماره موبایل") }, singleLine = true, colors = field, shape = RoundedCornerShape(16.dp))
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text("رمز عبور") }, singleLine = true, visualTransformation = PasswordVisualTransformation(), colors = field, shape = RoundedCornerShape(16.dp))
-        vm.error?.let { Text(it, color = Color(0xFFFCA5A5), modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp) }
-        Spacer(Modifier.height(20.dp))
-        Pill(if (vm.busy) "در حال ورود…" else "ورود", enabled = !vm.busy) { vm.login(phone, password) }
+        BrandLogo(84)
+        Spacer(Modifier.height(16.dp))
+        Text("ورود به پنل تیکارت", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+        Text("با شماره موبایل و رمز عبور سایت وارد شوید", color = Muted, fontSize = 14.sp)
+        Spacer(Modifier.height(24.dp))
+        SurfaceCard {
+            OutlinedTextField(
+                phone,
+                { phone = it },
+                Modifier.fillMaxWidth(),
+                label = { Text("شماره موبایل") },
+                singleLine = true,
+                colors = field,
+                shape = RoundedCornerShape(16.dp),
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                password,
+                { password = it },
+                Modifier.fillMaxWidth(),
+                label = { Text("رمز عبور") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                colors = field,
+                shape = RoundedCornerShape(16.dp),
+            )
+            vm.error?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = Color(0xFFDC2626), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(18.dp))
+            PrimaryPill(if (vm.busy) "در حال ورود…" else "ورود به پنل", enabled = !vm.busy) {
+                vm.login(phone, password)
+            }
+        }
     }
 }
 
 @Composable
 private fun Panel(vm: SellerViewModel) {
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Box(Modifier.weight(1f)) {
-            when (vm.tab) {
-                0 -> HomeTab(vm)
-                1 -> OrdersTab(vm)
-                2 -> ProductsTab(vm)
-                else -> AccountTab(vm)
+            if (vm.tab == 0) {
+                LiveWebPanel(vm)
+            } else {
+                SmsBankScreen(vm)
             }
         }
         Row(
-            Modifier.fillMaxWidth().background(Color(0xFF0B1220)).navigationBarsPadding().padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+            Modifier
+                .fillMaxWidth()
+                .background(Card)
+                .border(1.dp, Line)
+                .navigationBarsPadding()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            NavItem("خانه", Icons.Rounded.Home, vm.tab == 0) { vm.tab = 0 }
-            NavItem("فروش", Icons.Rounded.ReceiptLong, vm.tab == 1) { vm.tab = 1 }
-            NavItem("محصول", Icons.Rounded.Inventory2, vm.tab == 2) { vm.tab = 2 }
-            NavItem("حساب", Icons.Rounded.Person, vm.tab == 3) { vm.tab = 3 }
+            BottomPill(
+                label = "پنل کامل سایت",
+                icon = Icons.Rounded.Dashboard,
+                selected = vm.tab == 0,
+                modifier = Modifier.weight(1f),
+            ) { vm.tab = 0 }
+            BottomPill(
+                label = if (vm.listening) "پیامک بانک (فعال)" else "اتصال پیامک بانک",
+                icon = Icons.Rounded.Sms,
+                selected = vm.tab == 1,
+                badgeColor = if (vm.listening) Mint else Color(0xFFF59E0B),
+                modifier = Modifier.weight(1f),
+            ) { vm.tab = 1 }
         }
     }
 }
 
 @Composable
-private fun NavItem(label: String, icon: ImageVector, on: Boolean, click: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClick = click).padding(8.dp)) {
-        Icon(icon, null, tint = if (on) Blue else Muted, modifier = Modifier.size(22.dp))
-        Text(label, color = if (on) Blue else Muted, fontSize = 11.sp)
+private fun BottomPill(
+    label: String,
+    icon: ImageVector,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    badgeColor: Color? = null,
+    onClick: () -> Unit,
+) {
+    val bg = if (selected) Brush.horizontalGradient(listOf(BlueDeep, Color(0xFF0EA5E9))) else Brush.horizontalGradient(listOf(Card, Card))
+    val content = if (selected) Color.White else Ink
+    Row(
+        modifier
+            .height(46.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(bg)
+            .border(1.dp, if (selected) Color.Transparent else Line, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(icon, null, tint = content, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(label, color = content, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        if (badgeColor != null) {
+            Spacer(Modifier.width(6.dp))
+            Box(Modifier.size(8.dp).clip(CircleShape).background(badgeColor))
+        }
     }
 }
 
+/**
+ * خودِ سایت `https://tcartt.com/panel` با فونت وزیرمتن، گرادیان‌ها، نمودار استرایپ و تمام صفحات واقعی پنل.
+ * توکن ورود فروشنده مستقیم تزریق می‌شود تا دوباره لاگین نخواهد.
+ */
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun HomeTab(vm: SellerViewModel) {
-    val stats = vm.stats
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.drawable.ic_mark), null, Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("تیکارت", color = Blue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text(vm.name.ifBlank { "فروشنده" }, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            }
-            if (vm.busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Blue)
-        }
-        Spacer(Modifier.height(16.dp))
-        if (!vm.listening) {
-            SurfaceCard {
-                Text("پیامک بانک هنوز وصل نیست", color = Ink, fontWeight = FontWeight.Bold)
-                Text("از تب حساب، سرشمارهٔ بانک را انتخاب کن.", color = Muted, fontSize = 13.sp)
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Metric("این ماه", stats?.revenueMonth ?: 0, Modifier.weight(1f))
-            Metric("کل فروش", stats?.revenueAll ?: 0, Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Metric("در انتظار", (stats?.pendingCount ?: 0).toLong(), Modifier.weight(1f), money = false)
-            Metric("کیف پول", vm.wallet, Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("۱۴ روز اخیر", color = Ink, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        SurfaceCard { LineChart(vm.series) }
-        Spacer(Modifier.height(16.dp))
-        Text("آخرین فروش‌ها", color = Ink, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        if (vm.orders.isEmpty()) Text("هنوز سفارشی نیست.", color = Muted) else vm.orders.take(6).forEach { OrderCard(it) }
-        vm.error?.let { Text(it, color = Color(0xFFFCA5A5), modifier = Modifier.padding(top = 8.dp), fontSize = 12.sp) }
-        Spacer(Modifier.height(12.dp))
-    }
-}
+private fun LiveWebPanel(vm: SellerViewModel) {
+    val token = vm.account?.token?.takeIf { it.isNotBlank() } ?: vm.getSavedToken()
+    val mode = if (vm.light) "light" else "dark"
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var loading by remember { mutableStateOf(true) }
 
-@Composable
-private fun OrdersTab(vm: SellerViewModel) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Text("فروش‌ها", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text("${SmsText.faDigits((vm.stats?.paidCount ?: 0).toLong())} تأییدشده", color = Muted, fontSize = 13.sp)
-        Spacer(Modifier.height(12.dp))
-        if (vm.orders.isEmpty()) Text("سفارشی برای نمایش نیست.", color = Muted) else vm.orders.forEach { OrderCard(it) }
+    BackHandler(enabled = webViewRef?.canGoBack() == true) {
+        webViewRef?.goBack()
     }
-}
 
-@Composable
-private fun ProductsTab(vm: SellerViewModel) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Text("محصولات", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(12.dp))
-        if (vm.products.isEmpty()) Text("محصولی ثبت نشده.", color = Muted) else vm.products.forEach { ProductCard(it) }
-    }
-}
-
-@Composable
-private fun AccountTab(vm: SellerViewModel) {
-    val context = LocalContext.current
-    val acc = vm.account
-    LaunchedEffect(Unit) {
-        vm.refreshSenders()
-        vm.loadPlans()
-    }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("حساب", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { vm.toggleTheme() }) {
-                Text(if (vm.light) "حالت تیره" else "حالت روشن", color = Blue)
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        SurfaceCard {
-            Text(if (acc?.subActive == true) "اشتراک فعال" else "اشتراک غیرفعال", color = if (acc?.subActive == true) Mint else Muted, fontWeight = FontWeight.Bold)
-            Text(
-                buildString {
-                    if (!acc?.planTitle.isNullOrBlank()) append(acc?.planTitle)
-                    if ((acc?.daysLeft ?: 0) > 0) append(" · ${SmsText.faDigits((acc?.daysLeft ?: 0).toLong())} روز")
-                    if ((acc?.planLimit ?: 0) > 0) append(" · ${SmsText.faDigits((acc?.paidThisMonth ?: 0).toLong())} از ${SmsText.faDigits((acc?.planLimit ?: 0).toLong())} سفارش")
-                }.ifBlank { "برای فروش، یک پلن بخر" },
-                color = Muted,
-                fontSize = 13.sp,
-            )
-            Spacer(Modifier.height(8.dp))
-            vm.offers.forEach { offer ->
-                TextButton(onClick = { vm.buy(offer.tier, offer.months) }, enabled = !vm.busy) {
-                    Text(
-                        "${offer.title} · ${SmsText.faDigits(offer.months.toLong())} ماه · ${SmsText.faAmount(offer.price)} تومان",
-                        color = Blue,
-                    )
-                }
-            }
-            vm.invoice?.let { inv ->
-                Text("مبلغ دقیق واریز", color = Muted, fontSize = 12.sp)
-                Text("${SmsText.faAmount(inv.amount)} تومان", color = Ink, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                Text("${inv.bank} · ${inv.holder}", color = Muted, fontSize = 13.sp)
-                Text(inv.card, color = Ink, fontWeight = FontWeight.SemiBold)
-                Text("همین مبلغ را کارت‌به‌کارت کن. با پیامک بانک، اشتراک خودش فعال می‌شود.", color = Muted, fontSize = 12.sp)
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        SurfaceCard {
-            Text("سرشمارهٔ بانک", color = Ink, fontWeight = FontWeight.Bold)
-            Text("شمارهٔ خودت نیست. شماره‌ای که بانک از آن برایت پیامک می‌فرستد.", color = Muted, fontSize = 13.sp)
-            Spacer(Modifier.height(8.dp))
-            if (vm.senders.isEmpty()) Text("هنوز پیامکی در گوشی پیدا نشد.", color = Muted, fontSize = 13.sp)
-            vm.senders.forEach { sender ->
-                val on = sender.key in vm.selectedBanks
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(if (on) Blue.copy(alpha = 0.12f) else Color.Transparent)
-                        .clickable { vm.toggleBank(sender.key) }
-                        .padding(8.dp),
-                ) {
-                    Text(sender.address, color = if (on) Blue else Ink, fontWeight = FontWeight.SemiBold)
-                    if (sender.preview.isNotBlank()) Text(sender.preview, color = Muted, fontSize = 12.sp)
-                }
-            }
-            OutlinedTextField(
-                vm.manualSender,
-                { vm.manualSender = it },
-                Modifier.fillMaxWidth(),
-                label = { Text("افزودن سرشماره") },
-                singleLine = true,
-            )
-            TextButton(onClick = { vm.addManualSender() }) { Text("اضافه کن", color = Blue) }
-            if (vm.listening) TextButton(onClick = { vm.pause() }) { Text("قطع گوش دادن", color = Muted) }
-            else TextButton(onClick = { vm.startListening() }) { Text("این سرشماره‌ها وصل شوند", color = Blue) }
-        }
-        Spacer(Modifier.height(10.dp))
-        SurfaceCard {
-            Text("کارت", color = Muted, fontSize = 12.sp)
-            Text(if (acc?.hasCard == true) acc.cardMasked.ifBlank { "ثبت شده" } else "هنوز در سایت ثبت نشده", color = Ink, fontWeight = FontWeight.SemiBold)
-            if (!acc?.bankName.isNullOrBlank()) Text("${acc?.bankName} · ${acc?.holder.orEmpty()}", color = Muted, fontSize = 13.sp)
-        }
-        Spacer(Modifier.height(10.dp))
-        SurfaceCard {
-            Text("کلید API", color = Muted, fontSize = 12.sp)
-            Text(
-                acc?.apiKey?.let { if (it.length > 12) it.take(8) + "…" + it.takeLast(4) else it }.orEmpty().ifBlank { "بعد از ثبت کارت ساخته می‌شود" },
-                color = Ink,
-                fontWeight = FontWeight.SemiBold,
-            )
-            if (!acc?.apiKey.isNullOrBlank()) {
-                TextButton(onClick = {
-                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    cm.setPrimaryClip(ClipData.newPlainText("api", acc?.apiKey))
-                    vm.copied = true
-                }) { Text(if (vm.copied) "کپی شد" else "کپی کلید", color = Blue) }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Pill("نمایش اعلان نمونه") { vm.previewNotification() }
-        TextButton(onClick = { vm.loadDash() }, modifier = Modifier.fillMaxWidth()) { Text("تازه‌سازی", color = Blue) }
-        TextButton(onClick = { vm.logout() }, modifier = Modifier.fillMaxWidth()) { Text("خروج", color = Color(0xFFFCA5A5)) }
-        vm.error?.let { Text(it, color = Color(0xFFFCA5A5), fontSize = 13.sp) }
-    }
-}
-
-@Composable
-private fun Metric(label: String, value: Long, modifier: Modifier, money: Boolean = true) {
-    SurfaceCard(modifier) {
-        Text(label, color = Muted, fontSize = 12.sp)
-        Text(
-            if (money) "${SmsText.faAmount(value)} تومان" else SmsText.faDigits(value),
-            color = Ink,
-            fontWeight = FontWeight.Bold,
-            fontSize = 16.sp,
+    LaunchedEffect(mode) {
+        webViewRef?.evaluateJavascript(
+            "try{localStorage.setItem('tcart_color_mode_v2','$mode');document.documentElement.dataset.colorMode='$mode';document.body.dataset.colorMode='$mode';}catch(e){}",
+            null,
         )
     }
-}
 
-@Composable
-private fun OrderCard(order: OrderRow) {
-    SurfaceCard(Modifier.padding(bottom = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(order.title, color = Ink, fontWeight = FontWeight.SemiBold)
-                Text(statusFa(order.status), color = if (order.status == "paid") Mint else Muted, fontSize = 12.sp)
+    Box(Modifier.fillMaxSize()) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                    setBackgroundColor(AndroidColor.TRANSPARENT)
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.databaseEnabled = true
+                    settings.loadWithOverviewMode = true
+                    settings.useWideViewPort = true
+                    settings.textZoom = 100
+                    val bootJs = """
+                        try {
+                          if ('$token') localStorage.setItem('tcart_token', '$token');
+                          localStorage.setItem('tcart_color_mode_v2', '$mode');
+                          document.documentElement.dataset.colorMode = '$mode';
+                        } catch (e) {}
+                    """.trimIndent()
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                            view.evaluateJavascript(bootJs, null)
+                        }
+
+                        override fun onPageFinished(view: WebView, url: String?) {
+                            view.evaluateJavascript(bootJs, null)
+                            loading = false
+                        }
+
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean = false
+                    }
+                    loadUrl("https://tcartt.com/panel")
+                    webViewRef = this
+                }
+            },
+        )
+        if (loading) {
+            Box(Modifier.fillMaxSize().background(Page), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    BrandLogo(76)
+                    Spacer(Modifier.height(16.dp))
+                    CircularProgressIndicator(color = BlueDeep, strokeWidth = 3.dp)
+                }
             }
-            Text("${SmsText.faAmount(order.amount)} تومان", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
 
 @Composable
-private fun ProductCard(product: ProductRow) {
-    SurfaceCard(Modifier.padding(bottom = 8.dp)) {
-        Text(product.name, color = Ink, fontWeight = FontWeight.SemiBold)
-        Text("${SmsText.faAmount(product.price)} تومان · ${SmsText.faDigits(product.paidCount.toLong())} فروش", color = Muted, fontSize = 13.sp)
+private fun SmsBankScreen(vm: SellerViewModel) {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        vm.refreshSenders()
     }
-}
+    LaunchedEffect(Unit) {
+        if (vm.smsGranted()) vm.refreshSenders()
+    }
+    val field = OutlinedTextFieldDefaults.colors(
+        focusedTextColor = Ink,
+        unfocusedTextColor = Ink,
+        focusedBorderColor = BlueDeep,
+        unfocusedBorderColor = Line,
+        focusedLabelColor = BlueDeep,
+        unfocusedLabelColor = Muted,
+        cursorColor = BlueDeep,
+        focusedContainerColor = Card,
+        unfocusedContainerColor = Card,
+    )
 
-@Composable
-private fun LineChart(points: List<DayPoint>) {
-    if (points.isEmpty()) {
-        Text("داده‌ای برای نمودار نیست", color = Muted, fontSize = 13.sp)
-        return
-    }
-    val lineColor = Blue
-    Canvas(Modifier.fillMaxWidth().height(140.dp)) {
-        val max = (points.maxOf { it.revenue }).coerceAtLeast(1L).toFloat()
-        val step = size.width / (points.size - 1).coerceAtLeast(1)
-        val path = Path()
-        points.forEachIndexed { i, p ->
-            val x = i * step
-            val y = size.height - (p.revenue.toFloat() / max) * (size.height - 12f)
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Image(
+                painter = painterResource(R.drawable.tcart_logo),
+                contentDescription = null,
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(13.dp)),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("اتصال خودکار پیامک بانک", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    if (vm.listening) "فعال · ${vm.line}" else "سرشمارهٔ بانک‌هایت را انتخاب کن",
+                    color = if (vm.listening) Mint else Muted,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            TextButton(onClick = { vm.toggleTheme() }) {
+                Text(if (vm.light) "تیره" else "روشن", color = BlueDeep, fontWeight = FontWeight.Bold)
+            }
         }
-        drawPath(path, lineColor, style = Stroke(width = 5f, cap = StrokeCap.Round))
-        val last = points.last()
-        val x = (points.size - 1) * step
-        val y = size.height - (last.revenue.toFloat() / max) * (size.height - 12f)
-        drawCircle(Color.White, 7f, Offset(x, y))
-        drawCircle(lineColor, 4f, Offset(x, y))
-    }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(points.first().label, color = Muted, fontSize = 11.sp)
-        Text(points.last().label, color = Muted, fontSize = 11.sp)
+
+        Spacer(Modifier.height(14.dp))
+        SurfaceCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("تست نوتیفیکیشن واریز", color = Ink, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("ببین وقتی پول می‌آید اعلان و انیمیشن چطور نمایش داده می‌شود.", color = Muted, fontSize = 12.sp)
+                }
+                Spacer(Modifier.width(10.dp))
+                Button(
+                    onClick = { vm.previewNotification() },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueDeep, contentColor = Color.White),
+                ) {
+                    Text("اعلان نمونه", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SurfaceCard {
+            Text("سرشماره‌های پیامک بانک", color = Ink, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "شماره‌هایی که بانک از آن‌ها برایت پیامک واریز می‌فرستد را تیک بزن. پیامک بقیه شماره‌ها اصلاً فرستاده نمی‌شود.",
+                color = Muted,
+                fontSize = 13.sp,
+                lineHeight = 21.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (!vm.smsGranted()) {
+                PrimaryPill("دادن دسترسی خواندن پیامک") { launcher.launch(vm.permissions()) }
+                Spacer(Modifier.height(10.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    vm.manualSender,
+                    { vm.manualSender = it },
+                    Modifier.weight(1f),
+                    label = { Text("افزودن سرشماره (مثلاً 982000...)") },
+                    singleLine = true,
+                    colors = field,
+                    shape = RoundedCornerShape(14.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = { vm.addManualSender() },
+                    modifier = Modifier.height(54.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueDeep, contentColor = Color.White),
+                ) { Text("افزودن", fontWeight = FontWeight.Bold) }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (vm.senders.isEmpty()) {
+                Text("برای دیدن لیست فرستنده‌های اخیر، دکمهٔ خواندن پیامک‌ها را بزن.", color = Muted, fontSize = 13.sp)
+                TextButton(onClick = {
+                    if (vm.smsGranted()) vm.refreshSenders() else launcher.launch(vm.permissions())
+                }) { Text("خواندن فرستنده‌های پیامک گوشی", color = BlueDeep, fontWeight = FontWeight.Bold) }
+            } else {
+                vm.senders.forEach { sender ->
+                    val on = sender.key in vm.selectedBanks
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(if (on) BlueDeep.copy(alpha = 0.12f) else Page)
+                            .border(1.dp, if (on) BlueDeep else Line, RoundedCornerShape(14.dp))
+                            .clickable { vm.toggleBank(sender.key) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(sender.address, color = if (on) BlueDeep else Ink, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp)
+                            if (sender.preview.isNotBlank()) {
+                                Text(sender.preview, color = Muted, fontSize = 12.sp, maxLines = 1)
+                            }
+                        }
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(99.dp))
+                                .background(if (on) BlueDeep else Line)
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                if (on) "انتخاب شد" else "انتخاب",
+                                color = if (on) Color.White else Muted,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (vm.listening) {
+                Button(
+                    onClick = { vm.pause() },
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444), contentColor = Color.White),
+                ) { Text("توقف ارسال خودکار پیامک", fontWeight = FontWeight.Bold) }
+            } else {
+                PrimaryPill("فعال‌سازی ارسال خودکار این سرشماره‌ها") { vm.startListening() }
+            }
+            vm.error?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = Color(0xFFDC2626), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { vm.refreshSenders() }) { Text("بروزرسانی لیست پیامک", color = BlueDeep) }
+            TextButton(onClick = { vm.logout() }) { Text("خروج از حساب", color = Color(0xFFEF4444)) }
+        }
     }
 }
 
@@ -542,49 +632,90 @@ private fun SurfaceCard(modifier: Modifier = Modifier, content: @Composable () -
     Column(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .shadow(8.dp, RoundedCornerShape(22.dp), spotColor = BlueDeep.copy(alpha = 0.14f))
+            .clip(RoundedCornerShape(22.dp))
             .background(Card)
-            .border(1.dp, Line, RoundedCornerShape(18.dp))
-            .padding(14.dp),
+            .border(1.dp, Line, RoundedCornerShape(22.dp))
+            .padding(16.dp),
     ) { content() }
 }
 
 @Composable
-private fun Pill(text: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun PrimaryPill(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         enabled = enabled,
         modifier = Modifier.fillMaxWidth().height(54.dp),
-        shape = RoundedCornerShape(28.dp),
+        shape = RoundedCornerShape(18.dp),
         colors = ButtonDefaults.buttonColors(containerColor = BlueDeep, contentColor = Color.White),
-    ) { Text(text, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+    ) { Text(text, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold) }
 }
 
 @Composable
-private fun PayPop(amount: Long?, onDone: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xCC070B14)).clickable { onDone() }, contentAlignment = Alignment.Center) {
+private fun PayPop(amount: Long?, status: String, detail: String, onDone: () -> Unit) {
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { armed = true }
+    val scale by animateFloatAsState(
+        targetValue = if (armed) 1f else 0.84f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+        label = "payPop",
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xB306080F))
+            .clickable { onDone() },
+        contentAlignment = Alignment.Center,
+    ) {
         Column(
-            Modifier.padding(28.dp).clip(RoundedCornerShape(28.dp)).background(Card).padding(28.dp),
+            Modifier
+                .padding(24.dp)
+                .scale(scale)
+                .shadow(28.dp, RoundedCornerShape(30.dp), spotColor = Mint)
+                .clip(RoundedCornerShape(30.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF0F172A), Color(0xFF09101E))))
+                .border(1.5.dp, Mint.copy(alpha = 0.45f), RoundedCornerShape(30.dp))
+                .padding(horizontal = 26.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Image(painterResource(R.drawable.ic_mark), null, Modifier.size(64.dp).clip(RoundedCornerShape(18.dp)))
-            Spacer(Modifier.height(12.dp))
-            Text("پرداخت تأیید شد", color = Mint, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Image(
+                    painter = painterResource(R.drawable.tcart_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(38.dp).clip(RoundedCornerShape(11.dp)),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text("موتور تیکارت", color = Color(0xFF93C5FD), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(10.dp))
+                Icon(Icons.Rounded.CheckCircle, null, tint = Mint, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.height(16.dp))
             Text(
-                if (amount != null && amount > 0) "مبلغ ${SmsText.faAmount(amount)} تومان" else "واریز ثبت شد",
-                color = Ink,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
+                if (amount != null && amount > 0) "${SmsText.faAmount(amount)} تومان" else "پرداخت جدید",
+                color = Color.White,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.ExtraBold,
                 textAlign = TextAlign.Center,
             )
+            Spacer(Modifier.height(6.dp))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(99.dp))
+                    .background(Mint.copy(alpha = 0.16f))
+                    .border(1.dp, Mint.copy(alpha = 0.4f), RoundedCornerShape(99.dp))
+                    .padding(horizontal = 14.dp, vertical = 5.dp),
+            ) {
+                Text(
+                    status.ifBlank { "پرداخت تأیید شد" },
+                    color = Mint,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                )
+            }
+            if (detail.isNotBlank() && detail != "نمونه") {
+                Spacer(Modifier.height(8.dp))
+                Text(detail, color = Color(0xFF94A3B8), fontSize = 13.sp, textAlign = TextAlign.Center)
+            }
         }
     }
-}
-
-private fun statusFa(status: String) = when (status) {
-    "paid" -> "تأیید شد"
-    "pending" -> "در انتظار"
-    "expired" -> "منقضی"
-    "cancelled" -> "لغو"
-    else -> status
 }

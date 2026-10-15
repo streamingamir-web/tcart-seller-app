@@ -24,6 +24,9 @@ data class Account(
     val daysLeft: Int,
     val paidThisMonth: Int,
     val planLimit: Int,
+    val callbackSecret: String = "",
+    val callbackUrl: String = "",
+    val notices: List<Notice> = emptyList(),
 )
 
 data class OrderRow(
@@ -32,6 +35,9 @@ data class OrderRow(
     val status: String,
     val amount: Long,
     val at: Long,
+    val buyerUrl: String = "",
+    val buyerName: String = "",
+    val tracking: String = "",
 )
 
 data class ProductRow(
@@ -40,6 +46,38 @@ data class ProductRow(
     val price: Long,
     val paidCount: Int,
     val enabled: Boolean,
+    val description: String = "",
+    val deliveryType: String = "manual",
+    val deliveryContent: String = "",
+    val buyPath: String = "",
+)
+
+data class CardRow(
+    val id: Long,
+    val masked: String,
+    val holder: String,
+    val bank: String,
+    val sheba: String,
+    val nickname: String,
+    val paused: Boolean,
+    val primary: Boolean,
+)
+
+data class WalletTx(
+    val id: Long,
+    val at: String,
+    val title: String,
+    val signed: Long,
+)
+
+data class Notice(
+    val title: String,
+    val message: String,
+)
+
+data class PayPrefs(
+    val showSheba: Boolean,
+    val expiryMinutes: Int,
 )
 
 data class OrderStats(
@@ -170,6 +208,94 @@ object TcartApi {
         )
     }
 
+    fun cards(token: String): Triple<List<CardRow>, Boolean, PayPrefs> {
+        val payload = call("GET", "/api/web/seller/cards", token)
+        val settings = payload.optJSONObject("payment_settings")
+        return Triple(
+            payload.optJSONArray("cards").toCards(),
+            payload.optBoolean("rotate_enabled"),
+            PayPrefs(
+                showSheba = settings?.optBoolean("show_sheba_on_invoice") == true,
+                expiryMinutes = settings?.optInt("effective_default_payment_expiry_minutes")
+                    ?: settings?.optInt("default_payment_expiry_minutes")
+                    ?: 30,
+            ),
+        )
+    }
+
+    fun addCard(token: String, number: String, holder: String, bank: String, sheba: String, nickname: String) =
+        call(
+            "POST",
+            "/api/web/seller/cards",
+            token,
+            JSONObject()
+                .put("card_number", number)
+                .put("card_holder", holder)
+                .put("bank_name", bank)
+                .put("sheba", sheba)
+                .put("nickname", nickname),
+        )
+
+    fun patchCard(token: String, id: Long, body: JSONObject) =
+        call("PATCH", "/api/web/seller/cards/$id", token, body)
+
+    fun deleteCard(token: String, id: Long) = call("DELETE", "/api/web/seller/cards/$id", token)
+
+    fun primaryCard(token: String, id: Long) = call("POST", "/api/web/seller/cards/$id/primary", token, JSONObject())
+
+    fun rotateCards(token: String, enabled: Boolean) =
+        call("PUT", "/api/web/seller/card-rotation", token, JSONObject().put("rotate_enabled", enabled))
+
+    fun savePaySettings(token: String, showSheba: Boolean, minutes: Int) =
+        call(
+            "PUT",
+            "/api/web/seller/payment-settings",
+            token,
+            JSONObject().put("show_sheba_on_invoice", showSheba).put("default_payment_expiry_minutes", minutes),
+        )
+
+    fun saveProduct(
+        token: String,
+        id: Long?,
+        name: String,
+        price: Long,
+        description: String,
+        deliveryType: String,
+        deliveryContent: String,
+        enabled: Boolean,
+    ) {
+        val body = JSONObject()
+            .put("name", name)
+            .put("price_toman", price)
+            .put("description", description)
+            .put("delivery_type", deliveryType)
+            .put("delivery_content", deliveryContent)
+            .put("sales_enabled", enabled)
+        if (id == null) call("POST", "/api/web/seller/products", token, body)
+        else call("PATCH", "/api/web/seller/products/$id", token, body)
+    }
+
+    fun deleteProduct(token: String, id: Long) = call("DELETE", "/api/web/seller/products/$id", token)
+
+    fun confirmOrder(token: String, id: Long) =
+        call("POST", "/api/web/seller/orders/$id/confirm", token, JSONObject())
+
+    fun rejectOrder(token: String, id: Long) =
+        call("POST", "/api/web/seller/orders/$id/reject", token, JSONObject())
+
+    fun lookupOrder(token: String, query: String): OrderRow {
+        val payload = call("GET", "/api/web/seller/orders/lookup?q=${java.net.URLEncoder.encode(query, "UTF-8")}", token)
+        val o = payload.optJSONObject("order") ?: throw IllegalStateException("سفارش پیدا نشد")
+        return JSONArray().put(o).toOrders().first()
+    }
+
+    fun walletActivity(token: String): List<WalletTx> {
+        val payload = call("GET", "/api/web/seller/wallet", token)
+        return payload.optJSONArray("activity").toWallet()
+    }
+
+    fun regenerateKey(token: String) = call("POST", "/api/web/seller/regenerate-api-key", token, JSONObject())
+
     fun postSms(webhookUrl: String, secret: String, sms: String): SmsPostResult {
         val body = JSONObject().put("sms", sms).toString().toRequestBody(json)
         val request = Request.Builder()
@@ -209,6 +335,9 @@ object TcartApi {
             daysLeft = profile?.optInt("subscription_days_left") ?: 0,
             paidThisMonth = profile?.optInt("paid_orders_this_month") ?: 0,
             planLimit = profile?.optInt("plan_limit") ?: 0,
+            callbackSecret = profile?.optString("callback_secret").orEmpty(),
+            callbackUrl = profile?.optString("default_callback_url").orEmpty(),
+            notices = profile?.optJSONArray("notifications").toNotices(),
         )
     }
 
@@ -217,6 +346,12 @@ object TcartApi {
         if (!token.isNullOrBlank()) builder.header("Authorization", "Bearer $token")
         if (method == "POST") {
             builder.post((body ?: JSONObject()).toString().toRequestBody(json))
+        } else if (method == "PUT") {
+            builder.put((body ?: JSONObject()).toString().toRequestBody(json))
+        } else if (method == "PATCH") {
+            builder.patch((body ?: JSONObject()).toString().toRequestBody(json))
+        } else if (method == "DELETE") {
+            builder.delete()
         } else {
             builder.get()
         }
@@ -246,6 +381,9 @@ private fun JSONArray?.toOrders(): List<OrderRow> {
                     status = o.optString("status"),
                     amount = o.optLong("unique_amount_toman"),
                     at = isoMillis(o.optString("paid_at").ifBlank { o.optString("created_at") }),
+                    buyerUrl = o.optString("buyer_url"),
+                    buyerName = o.optString("buyer_name"),
+                    tracking = o.optString("tracking_code"),
                 ),
             )
         }
@@ -264,6 +402,58 @@ private fun JSONArray?.toProducts(): List<ProductRow> {
                     price = o.optLong("price_toman"),
                     paidCount = o.optInt("paid_count"),
                     enabled = o.optBoolean("sales_enabled", true),
+                    description = o.optString("description"),
+                    deliveryType = o.optString("delivery_type").ifBlank { "manual" },
+                    deliveryContent = o.optString("delivery_content"),
+                    buyPath = o.optString("buy_url"),
+                ),
+            )
+        }
+    }
+}
+
+private fun JSONArray?.toNotices(): List<Notice> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (i in 0 until length()) {
+            val o = optJSONObject(i) ?: continue
+            add(Notice(o.optString("title"), o.optString("message")))
+        }
+    }
+}
+
+private fun JSONArray?.toCards(): List<CardRow> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (i in 0 until length()) {
+            val o = optJSONObject(i) ?: continue
+            add(
+                CardRow(
+                    id = o.optLong("id"),
+                    masked = o.optString("card_number_formatted").ifBlank { o.optString("card_number") },
+                    holder = o.optString("card_holder"),
+                    bank = o.optString("bank_name"),
+                    sheba = o.optString("sheba_formatted").ifBlank { o.optString("sheba") },
+                    nickname = o.optString("nickname"),
+                    paused = o.optBoolean("paused"),
+                    primary = o.optBoolean("is_primary"),
+                ),
+            )
+        }
+    }
+}
+
+private fun JSONArray?.toWallet(): List<WalletTx> {
+    if (this == null) return emptyList()
+    return buildList {
+        for (i in 0 until length()) {
+            val o = optJSONObject(i) ?: continue
+            add(
+                WalletTx(
+                    id = o.optLong("id"),
+                    at = o.optString("created_at"),
+                    title = o.optString("kind").ifBlank { o.optString("origin") },
+                    signed = o.optLong("signed_amount_toman"),
                 ),
             )
         }
