@@ -84,8 +84,38 @@ class Prefs(context: Context) {
         p.edit().putString(KEY_HISTORY, next.toString()).apply()
     }
 
+    var seenIntro: Boolean
+        get() = p.getBoolean(KEY_INTRO, false)
+        set(value) = p.edit().putBoolean(KEY_INTRO, value).apply()
+
+    var lightTheme: Boolean
+        get() = p.getBoolean(KEY_LIGHT, true)
+        set(value) = p.edit().putBoolean(KEY_LIGHT, value).apply()
+
+    fun bankSenders(): Set<String> = p.getStringSet(KEY_BANKS, emptySet())?.toSet().orEmpty()
+
+    fun setBankSenders(values: Set<String>) {
+        p.edit().putStringSet(KEY_BANKS, values.toSet()).apply()
+    }
+
+    fun knownPending(): Set<String> = p.getStringSet(KEY_PENDING, emptySet())?.toSet().orEmpty()
+
+    fun setKnownPending(ids: Set<String>) {
+        p.edit().putStringSet(KEY_PENDING, ids.toSet()).apply()
+    }
+
+    var pendingPrimed: Boolean
+        get() = p.getBoolean(KEY_PRIMED, false)
+        set(value) = p.edit().putBoolean(KEY_PRIMED, value).apply()
+
     fun clearSession() {
+        val intro = seenIntro
+        val light = lightTheme
+        val banks = bankSenders()
         p.edit().clear().apply()
+        seenIntro = intro
+        lightTheme = light
+        setBankSenders(banks)
     }
 
     companion object {
@@ -98,5 +128,10 @@ class Prefs(context: Context) {
         private const val KEY_SUB = "sub"
         private const val KEY_LINE = "line"
         private const val KEY_HISTORY = "history"
+        private const val KEY_INTRO = "intro"
+        private const val KEY_LIGHT = "light"
+        private const val KEY_BANKS = "banks"
+        private const val KEY_PENDING = "pending_ids"
+        private const val KEY_PRIMED = "pending_primed"
     }
 }

@@ -6,17 +6,30 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import ir.tcart.seller.data.Prefs
+import ir.tcart.seller.data.TcartApi
 import ir.tcart.seller.notify.PaidNotifier
+import java.util.concurrent.Executors
 
 class ListenService : Service() {
+    private val handler = Handler(Looper.getMainLooper())
+    private val worker = Executors.newSingleThreadExecutor()
+    private val poll = object : Runnable {
+        override fun run() {
+            worker.execute { checkPending() }
+            handler.postDelayed(this, 90_000)
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val prefs = Prefs(this)
         PaidNotifier.ensureChannels(this)
-        val notification = PaidNotifier.presenceNotification(this, prefs.lineLabel)
+        val notification = PaidNotifier.presenceNotification(this, prefs.lineLabel.ifBlank { "منتظر پیامک بانک" })
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(
                 PaidNotifier.presenceId(),
@@ -27,16 +40,40 @@ class ListenService : Service() {
             startForeground(PaidNotifier.presenceId(), notification)
         }
         if (!prefs.listening) {
+            handler.removeCallbacks(poll)
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
         }
+        handler.removeCallbacks(poll)
+        handler.post(poll)
         return START_STICKY
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(poll)
         PaidNotifier.cancelPresence(this)
         super.onDestroy()
+    }
+
+    private fun checkPending() {
+        val prefs = Prefs(this)
+        if (!prefs.listening || prefs.token.isBlank()) return
+        try {
+            val orders = TcartApi.dashboard(prefs.token).orders.filter { it.status == "pending" }
+            val ids = orders.map { it.id.toString() }.toSet()
+            if (!prefs.pendingPrimed) {
+                prefs.setKnownPending(ids)
+                prefs.pendingPrimed = true
+                return
+            }
+            val known = prefs.knownPending()
+            orders.filter { it.id.toString() !in known }.forEach { order ->
+                PaidNotifier.showPending(this, order.amount, order.title.ifBlank { "سفارش جدید" })
+            }
+            prefs.setKnownPending(ids)
+        } catch (_: Exception) {
+        }
     }
 
     companion object {

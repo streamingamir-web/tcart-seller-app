@@ -33,7 +33,9 @@ class SmsReceiver : BroadcastReceiver() {
 
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
         val body = messages.joinToString("") { it?.messageBody.orEmpty() }.trim()
+        val sender = messages.firstOrNull()?.originatingAddress.orEmpty()
         if (body.isEmpty() || SmsText.isSecret(body)) return
+        if (!SmsInbox.matches(sender, prefs.bankSenders())) return
 
         val pending = goAsync()
         worker.execute {
@@ -69,12 +71,18 @@ class SmsReceiver : BroadcastReceiver() {
                 result.ignored -> prefs.pushHistory(
                     PayEvent(System.currentTimeMillis(), "پیام نادیده گرفته شد", "واریز نبود", "ignored", amount ?: 0),
                 )
-                result.ok -> prefs.pushHistory(
-                    PayEvent(System.currentTimeMillis(), "پیام به تیکارت رسید", result.error.ifBlank { "در انتظار تطبیق" }, "sent", amount ?: 0),
-                )
+                result.ok -> {
+                    prefs.pushHistory(
+                        PayEvent(System.currentTimeMillis(), "در انتظار تأیید", "پیام بانک رسید", "pending", amount ?: 0),
+                    )
+                    if (amount != null && amount > 0) {
+                        PaidNotifier.showPending(context, amount, "هنوز با سفارشی جور نشد")
+                    }
+                }
                 else -> {
                     val detail = result.error.ifBlank { "سفارش بازی با این مبلغ پیدا نشد" }
-                    prefs.pushHistory(PayEvent(System.currentTimeMillis(), "واریز بدون سفارش", detail, "unmatched", amount ?: 0))
+                    prefs.pushHistory(PayEvent(System.currentTimeMillis(), "در انتظار تأیید", detail, "pending", amount ?: 0))
+                    if (amount != null && amount > 0) PaidNotifier.showPending(context, amount, detail)
                 }
             }
         } catch (_: Exception) {
