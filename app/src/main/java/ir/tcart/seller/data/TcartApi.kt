@@ -25,7 +25,7 @@ data class SmsPostResult(
 
 object TcartApi {
     /** همان سرور فعلی پنل. اگر دامنه عوض شد فقط همین خط را عوض کن. */
-    const val ROOT = "http://155.117.127.242:8080"
+    const val ROOT = "https://tcartt.com"
 
     private val json = "application/json; charset=utf-8".toMediaType()
     private val client = OkHttpClient.Builder()
