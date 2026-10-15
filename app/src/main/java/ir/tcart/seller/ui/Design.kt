@@ -286,7 +286,8 @@ internal fun SitePill(text: String, color: Color, onClick: (() -> Unit)? = null)
 }
 
 @Composable
-internal fun IconPill(icon: ImageVector, tint: Color = Ink, onClick: () -> Unit) {
+internal fun IconPill(icon: ImageVector, tint: Color = Color.Unspecified, onClick: () -> Unit) {
+    val resolved = if (tint == Color.Unspecified) Ink else tint
     Box(
         Modifier
             .size(36.dp)
@@ -296,7 +297,7 @@ internal fun IconPill(icon: ImageVector, tint: Color = Ink, onClick: () -> Unit)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, null, tint = tint, modifier = Modifier.size(18.dp))
+        Icon(icon, null, tint = resolved, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -363,12 +364,13 @@ internal fun SmallGradientButton(
 internal fun OutlineButton(
     text: String,
     modifier: Modifier = Modifier,
-    color: Color = Cyan,
+    color: Color = Color.Unspecified,
     icon: ImageVector? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    val tint = if (enabled) color else Muted
+    val base = if (color == Color.Unspecified) Cyan else color
+    val tint = if (enabled) base else Muted
     Row(
         modifier
             .height(40.dp)
@@ -542,12 +544,13 @@ internal fun PageHeader(
     kicker: String,
     title: String,
     subtitle: String? = null,
-    accent: Color = Cyan,
+    accent: Color = Color.Unspecified,
     trailing: (@Composable () -> Unit)? = null,
 ) {
+    val accentColor = if (accent == Color.Unspecified) Cyan else accent
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(kicker, color = accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(kicker, color = accentColor, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             Text(title, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
             if (subtitle != null) {
                 Spacer(Modifier.height(2.dp))
@@ -616,8 +619,9 @@ internal fun MetricTile(title: String, value: String, sub: String, accent: Color
 }
 
 @Composable
-internal fun Meter(fraction: Float, color: Color = Mint, modifier: Modifier = Modifier) {
+internal fun Meter(fraction: Float, color: Color = Color.Unspecified, modifier: Modifier = Modifier) {
     val f = fraction.coerceIn(0f, 1f)
+    val bar = if (color == Color.Unspecified) Mint else color
     Box(
         modifier
             .fillMaxWidth()
@@ -631,7 +635,7 @@ internal fun Meter(fraction: Float, color: Color = Mint, modifier: Modifier = Mo
                     .fillMaxHeight()
                     .fillMaxWidth(f)
                     .clip(RoundedCornerShape(99.dp))
-                    .background(Brush.horizontalGradient(listOf(color, Cyan))),
+                    .background(Brush.horizontalGradient(listOf(bar, Cyan))),
             )
         }
     }
