@@ -60,7 +60,7 @@ class ListenService : Service() {
         val prefs = Prefs(this)
         if (!prefs.listening || prefs.token.isBlank()) return
         try {
-            val orders = TcartApi.dashboard(prefs.token).orders.filter { it.status == "pending" }
+            val orders = TcartApi.orders(prefs.token).orders.filter { it.status == "pending" }
             val ids = orders.map { it.id.toString() }.toSet()
             if (!prefs.pendingPrimed) {
                 prefs.setKnownPending(ids)
@@ -69,7 +69,7 @@ class ListenService : Service() {
             }
             val known = prefs.knownPending()
             orders.filter { it.id.toString() !in known }.forEach { order ->
-                PaidNotifier.showPending(this, order.amount, order.title.ifBlank { "سفارش جدید" })
+                PaidNotifier.showPending(this, order.uniqueToman, order.title.ifBlank { "سفارش جدید" })
             }
             prefs.setKnownPending(ids)
         } catch (_: Exception) {
