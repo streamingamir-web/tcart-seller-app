@@ -83,7 +83,7 @@ object TcartApi {
     private val uploadClient = client.newBuilder()
         .writeTimeout(180, TimeUnit.SECONDS)
         .readTimeout(180, TimeUnit.SECONDS)
-        .callTimeout(0)
+        .callTimeout(0, TimeUnit.SECONDS) // 0 = بدون سقف کلی برای آپلود
         .build()
 
     // ───────────────────────── احراز هویت ─────────────────────────
