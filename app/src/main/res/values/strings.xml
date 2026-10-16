@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="app_name">تیکارت</string>
-    <string name="channel_paid">پرداخت تأییدشده</string>
-    <string name="channel_paid_desc">وقتی واریز مشتری با سفارش جور شود</string>
-    <string name="channel_presence">اتصال پیامک</string>
-    <string name="channel_presence_desc">نشان می‌دهد اپ هنوز به پیامک بانک گوش می‌دهد</string>
-    <string name="channel_alert">هشدار اتصال</string>
-</resources>
